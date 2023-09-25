@@ -17217,8 +17217,48 @@ void Sema::CheckArrayAccess(const Expr *BaseExpr, const Expr *IndexExpr,
     return;
 
   Expr::EvalResult Result;
-  if (!IndexExpr->EvaluateAsInt(Result, Context, Expr::SE_AllowSideEffects))
+  if (!IndexExpr->EvaluateAsInt(Result, Context, Expr::SE_AllowSideEffects)) {
+    SmallString<128> sizeString;
+    llvm::raw_svector_ostream OS(sizeString);
+
+    OS << "'";
+    IndexExpr->printPretty(OS, nullptr, getPrintingPolicy());
+    OS << "'";
+
+    if (!IsUnboundedArray) {
+      Context.getDiagnostics().Report(
+          BaseExpr->getBeginLoc(), diag::remark_array_access)
+              << 0 << ArrayTy->desugar() << OS.str();
+      return;
+    }
+
+    // If the record has a flexible array member with the 'counted_by'
+    // attribute, then report that.
+    const Expr *E = BaseExpr->IgnoreParens();
+    const Decl *D = nullptr;
+
+    if (const auto *ME = dyn_cast<MemberExpr>(E))
+      D = ME->getMemberDecl();
+    else if (const auto *DRE = dyn_cast<DeclRefExpr>(E))
+      D = DRE->getDecl();
+    else if (const auto *IRE = dyn_cast<ObjCIvarRefExpr>(E))
+      D = IRE->getDecl();
+
+    if (const auto *FD = dyn_cast_if_present<FieldDecl>(D)) {
+      if (const auto *CBA = FD->getAttr<CountedByAttr>()) {
+        Context.getDiagnostics().Report(
+            BaseExpr->getBeginLoc(), diag::remark_counted_by_array_access)
+                << CBA->getCountedByField()
+                << OS.str();
+        return;
+      }
+    }
+
+    Context.getDiagnostics().Report(
+        BaseExpr->getBeginLoc(), diag::remark_unknown_array_access)
+            << OS.str();
     return;
+  }
 
   llvm::APSInt index = Result.Val.getInt();
   if (IndexNegated) {
@@ -17332,6 +17372,10 @@ void Sema::CheckArrayAccess(const Expr *BaseExpr, const Expr *IndexExpr,
       index = index.zext(size.getBitWidth());
     else if (size.getBitWidth() < index.getBitWidth())
       size = size.zext(index.getBitWidth());
+
+    Context.getDiagnostics().Report(
+        BaseExpr->getBeginLoc(), diag::remark_array_access)
+            << 1 << ArrayTy->desugar() << toString(index, 10, true);
 
     // For array subscripting the index must be less than size, but for pointer
     // arithmetic also allow the index (offset) to be equal to size since

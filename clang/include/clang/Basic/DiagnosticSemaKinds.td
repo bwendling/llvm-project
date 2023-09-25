@@ -9642,6 +9642,16 @@ def warn_array_index_exceeds_max_addressable_bounds : Warning<
 def note_array_declared_here : Note<
   "array %0 declared here">;
 
+def remark_array_access : Remark<
+  "accessing %select{fixed|dynamic}0 sized array %1 by %2">,
+  InGroup<ArrayBoundsRemarks>;
+def remark_counted_by_array_access : Remark<
+  "accessing flexible array, counted by %0, with %1">,
+  InGroup<ArrayBoundsRemarks>;
+def remark_unknown_array_access : Remark<
+  "accessing unknown sized array by %0">,
+  InGroup<ArrayBoundsRemarks>;
+
 def warn_inconsistent_array_form : Warning<
   "argument %0 of type %1 with mismatched bound">,
   InGroup<ArrayParameter>, DefaultIgnore;

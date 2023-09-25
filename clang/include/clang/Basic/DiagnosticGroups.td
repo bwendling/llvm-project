@@ -1346,6 +1346,9 @@ def ProfileInstrOutOfDate : DiagGroup<"profile-instr-out-of-date">;
 def ProfileInstrUnprofiled : DiagGroup<"profile-instr-unprofiled">;
 def MisExpect : DiagGroup<"misexpect">;
 
+// Array bounds remarks.
+def ArrayBoundsRemarks : DiagGroup<"array-bounds">;
+
 // AddressSanitizer frontend instrumentation remarks.
 def SanitizeAddressRemarks : DiagGroup<"sanitize-address">;
 
