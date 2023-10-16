@@ -17208,10 +17208,10 @@ void Sema::CheckArrayAccess(const Expr *BaseExpr, const Expr *IndexExpr,
 
   const Type *BaseType =
       ArrayTy == nullptr ? nullptr : ArrayTy->getElementType().getTypePtr();
-  bool IsUnboundedArray =
-      BaseType == nullptr || BaseExpr->isFlexibleArrayMemberLike(
-                                 Context, StrictFlexArraysLevel,
-                                 /*IgnoreTemplateOrMacroSubstitution=*/true);
+  bool IsFlexArray = BaseExpr->isFlexibleArrayMemberLike(Context,
+                                                         StrictFlexArraysLevel,
+                                                         true);
+  bool IsUnboundedArray = BaseType == nullptr || IsFlexArray;
   if (EffectiveType->isDependentType() ||
       (!IsUnboundedArray && BaseType->isDependentType()))
     return;
@@ -17225,27 +17225,31 @@ void Sema::CheckArrayAccess(const Expr *BaseExpr, const Expr *IndexExpr,
     IndexExpr->printPretty(OS, nullptr, getPrintingPolicy());
     OS << "'";
 
-    if (!IsUnboundedArray) {
+    if (!IsFlexArray) {
+      // Report a dynamically sized, non-flexible array.
       Context.getDiagnostics().Report(
           BaseExpr->getBeginLoc(), diag::remark_array_access)
-              << 0 << ArrayTy->desugar() << OS.str();
+              << 1 << OS.str();
       return;
     }
 
     // If the record has a flexible array member with the 'counted_by'
-    // attribute, then report that.
-    const Expr *E = BaseExpr->IgnoreParens();
-    const Decl *D = nullptr;
+    // attribute, then report that. Try harder to find a NamedDecl to point at
+    // in the note.
+    const NamedDecl *ND = nullptr;
 
-    if (const auto *ME = dyn_cast<MemberExpr>(E))
-      D = ME->getMemberDecl();
-    else if (const auto *DRE = dyn_cast<DeclRefExpr>(E))
-      D = DRE->getDecl();
-    else if (const auto *IRE = dyn_cast<ObjCIvarRefExpr>(E))
-      D = IRE->getDecl();
+    while (const auto *ASE = dyn_cast<ArraySubscriptExpr>(BaseExpr))
+      BaseExpr = ASE->getBase()->IgnoreParenCasts();
 
-    if (const auto *FD = dyn_cast_if_present<FieldDecl>(D)) {
-      if (const auto *CBA = FD->getAttr<CountedByAttr>()) {
+    if (const auto *DRE = dyn_cast<DeclRefExpr>(BaseExpr))
+      ND = DRE->getDecl();
+
+    if (const auto *ME = dyn_cast<MemberExpr>(BaseExpr))
+      ND = ME->getMemberDecl();
+
+    if (ND) {
+      if (const auto *CBA = ND->getAttr<CountedByAttr>()) {
+        // Yay! Report a flex array annotated with the 'counted_by' attribute.
         Context.getDiagnostics().Report(
             BaseExpr->getBeginLoc(), diag::remark_counted_by_array_access)
                 << CBA->getCountedByField()
@@ -17254,9 +17258,10 @@ void Sema::CheckArrayAccess(const Expr *BaseExpr, const Expr *IndexExpr,
       }
     }
 
+    // Report a flex array that we can't determine the size of. (Boo!)
     Context.getDiagnostics().Report(
-        BaseExpr->getBeginLoc(), diag::remark_unknown_array_access)
-            << OS.str();
+        BaseExpr->getBeginLoc(), diag::remark_array_access)
+            << 2 << OS.str();
     return;
   }
 
@@ -17373,9 +17378,10 @@ void Sema::CheckArrayAccess(const Expr *BaseExpr, const Expr *IndexExpr,
     else if (size.getBitWidth() < index.getBitWidth())
       size = size.zext(index.getBitWidth());
 
+    // Report a fixed-sized array.
     Context.getDiagnostics().Report(
         BaseExpr->getBeginLoc(), diag::remark_array_access)
-            << 1 << ArrayTy->desugar() << toString(index, 10, true);
+            << 0 << toString(index, 10, true);
 
     // For array subscripting the index must be less than size, but for pointer
     // arithmetic also allow the index (offset) to be equal to size since
