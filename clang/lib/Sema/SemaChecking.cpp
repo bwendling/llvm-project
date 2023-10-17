@@ -17260,9 +17260,8 @@ void Sema::CheckArrayAccess(const Expr *BaseExpr, const Expr *IndexExpr,
 
     if (!IsFlexArray) {
       // Report a dynamically sized, non-flexible array.
-      Context.getDiagnostics().Report(
-          BaseExpr->getBeginLoc(), diag::remark_array_access)
-              << 1 << OS.str();
+      Diag(BaseExpr->getBeginLoc(), diag::remark_array_access)
+          << 1 << OS.str();
       return;
     }
 
@@ -17283,18 +17282,16 @@ void Sema::CheckArrayAccess(const Expr *BaseExpr, const Expr *IndexExpr,
     if (ND) {
       if (const auto *CBA = ND->getAttr<CountedByAttr>()) {
         // Yay! Report a flex array annotated with the 'counted_by' attribute.
-        Context.getDiagnostics().Report(
-            BaseExpr->getBeginLoc(), diag::remark_counted_by_array_access)
-                << CBA->getCountedByField()
-                << OS.str();
+        Diag(BaseExpr->getBeginLoc(), diag::remark_counted_by_array_access)
+            << CBA->getCountedByField()
+            << OS.str();
         return;
       }
     }
 
     // Report a flex array that we can't determine the size of. (Boo!)
-    Context.getDiagnostics().Report(
-        BaseExpr->getBeginLoc(), diag::remark_array_access)
-            << 2 << OS.str();
+    Diag(BaseExpr->getBeginLoc(), diag::remark_array_access)
+        << 2 << OS.str();
     return;
   }
 
@@ -17412,9 +17409,8 @@ void Sema::CheckArrayAccess(const Expr *BaseExpr, const Expr *IndexExpr,
       size = size.zext(index.getBitWidth());
 
     // Report a fixed-sized array.
-    Context.getDiagnostics().Report(
-        BaseExpr->getBeginLoc(), diag::remark_array_access)
-            << 0 << toString(index, 10, true);
+    Diag(BaseExpr->getBeginLoc(), diag::remark_array_access)
+        << 0 << toString(index, 10, true);
 
     // For array subscripting the index must be less than size, but for pointer
     // arithmetic also allow the index (offset) to be equal to size since
