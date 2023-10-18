@@ -17236,64 +17236,75 @@ void Sema::CheckArrayAccess(const Expr *BaseExpr, const Expr *IndexExpr,
   const ConstantArrayType *ArrayTy =
       Context.getAsConstantArrayType(BaseExpr->getType());
 
+  unsigned ArrayKind = ArrayTy ? /*fixed*/0 : /*dynamic*/1;
+
   LangOptions::StrictFlexArraysLevelKind
     StrictFlexArraysLevel = getLangOpts().getStrictFlexArraysLevel();
 
   const Type *BaseType =
       ArrayTy == nullptr ? nullptr : ArrayTy->getElementType().getTypePtr();
-  bool IsFlexArray = BaseExpr->isFlexibleArrayMemberLike(Context,
-                                                         StrictFlexArraysLevel,
-                                                         true);
-  bool IsUnboundedArray = BaseType == nullptr || IsFlexArray;
+  bool IsUnboundedArray =
+      BaseType == nullptr || BaseExpr->isFlexibleArrayMemberLike(
+                                 Context, StrictFlexArraysLevel,
+                                 /*IgnoreTemplateOrMacroSubstitution=*/true);
   if (EffectiveType->isDependentType() ||
       (!IsUnboundedArray && BaseType->isDependentType()))
     return;
 
-  Expr::EvalResult Result;
-  if (!IndexExpr->EvaluateAsInt(Result, Context, Expr::SE_AllowSideEffects)) {
-    SmallString<128> sizeString;
-    llvm::raw_svector_ostream OS(sizeString);
+  // Report types of array accesses. Note: we only care about the strictest
+  // flexible arrays here.
+  bool IsFlexArray = BaseExpr->isFlexibleArrayMemberLike(
+      Context, LangOptions::StrictFlexArraysLevelKind::IncompleteOnly, true);
 
-    OS << "'";
-    IndexExpr->printPretty(OS, nullptr, getPrintingPolicy());
-    OS << "'";
+  auto FindNamedDecl = [](const Expr *E) {
+    const NamedDecl *ND = nullptr;
 
-    if (!IsFlexArray) {
-      // Report a dynamically sized, non-flexible array.
-      Diag(BaseExpr->getBeginLoc(), diag::remark_array_access)
-          << 1 << OS.str();
-      return;
-    }
+    while (const auto *ASE = dyn_cast<ArraySubscriptExpr>(E))
+      E = ASE->getBase()->IgnoreParenCasts();
 
+    if (const auto *DRE = dyn_cast<DeclRefExpr>(E))
+      ND = DRE->getDecl();
+
+    if (const auto *ME = dyn_cast<MemberExpr>(E))
+      ND = ME->getMemberDecl();
+
+    return ND;
+  };
+
+  SmallString<128> sizeString;
+  llvm::raw_svector_ostream OS(sizeString);
+
+  OS << "'";
+  IndexExpr->printPretty(OS, nullptr, getPrintingPolicy());
+  OS << "'";
+
+  if (IsFlexArray) {
     // If the record has a flexible array member with the 'counted_by'
     // attribute, then report that. Try harder to find a NamedDecl to point at
     // in the note.
-    const NamedDecl *ND = nullptr;
-
-    while (const auto *ASE = dyn_cast<ArraySubscriptExpr>(BaseExpr))
-      BaseExpr = ASE->getBase()->IgnoreParenCasts();
-
-    if (const auto *DRE = dyn_cast<DeclRefExpr>(BaseExpr))
-      ND = DRE->getDecl();
-
-    if (const auto *ME = dyn_cast<MemberExpr>(BaseExpr))
-      ND = ME->getMemberDecl();
-
-    if (ND) {
+    bool Reported = false;
+    if (const NamedDecl *ND = FindNamedDecl(BaseExpr)) {
       if (const auto *CBA = ND->getAttr<CountedByAttr>()) {
         // Yay! Report a flex array annotated with the 'counted_by' attribute.
         Diag(BaseExpr->getBeginLoc(), diag::remark_counted_by_array_access)
             << CBA->getCountedByField()
             << OS.str();
-        return;
+        Reported = true;
       }
     }
 
-    // Report a flex array that we can't determine the size of. (Boo!)
+    if (!Reported)
+      // Report a flex array that we can't determine the size of. (Boo!)
+      Diag(BaseExpr->getBeginLoc(), diag::remark_array_access)
+          << ArrayKind << OS.str();
+  } else {
     Diag(BaseExpr->getBeginLoc(), diag::remark_array_access)
-        << 2 << OS.str();
-    return;
+        << ArrayKind << OS.str();
   }
+
+  Expr::EvalResult Result;
+  if (!IndexExpr->EvaluateAsInt(Result, Context, Expr::SE_AllowSideEffects))
+    return;
 
   llvm::APSInt index = Result.Val.getInt();
   if (IndexNegated) {
@@ -17407,10 +17418,6 @@ void Sema::CheckArrayAccess(const Expr *BaseExpr, const Expr *IndexExpr,
       index = index.zext(size.getBitWidth());
     else if (size.getBitWidth() < index.getBitWidth())
       size = size.zext(index.getBitWidth());
-
-    // Report a fixed-sized array.
-    Diag(BaseExpr->getBeginLoc(), diag::remark_array_access)
-        << 0 << toString(index, 10, true);
 
     // For array subscripting the index must be less than size, but for pointer
     // arithmetic also allow the index (offset) to be equal to size since
