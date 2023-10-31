@@ -167,6 +167,11 @@ Changes to the C API
   * ``LLVMConstAnd``
   * ``LLVMConstOr``
 
+* Added ``LLVMCreateTargetMachineWithOptions``, along with helper functions for
+  an opaque option structure, as an alternative to ``LLVMCreateTargetMachine``.
+  The option structure exposes an additional setting (i.e., the target ABI) and
+  provides default values for unspecified settings.
+
 Changes to the CodeGen infrastructure
 -------------------------------------
 
@@ -208,6 +213,7 @@ Changes to LLDB
 * ``lldb-vscode`` was renamed to ``lldb-dap`` and and its installation
   instructions have been updated to reflect this. The underlying functionality
   remains unchanged.
+* The ``mte_ctrl`` register can now be read from AArch64 Linux core files.
 
 * LLDB now supports debugging the Scalable Matrix Extension (SME) on AArch64
   Linux for both running processes and core files. For details refer to the
