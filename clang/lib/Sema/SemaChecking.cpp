@@ -17679,7 +17679,8 @@ void Sema::CheckCastAlign(Expr *Op, QualType T, SourceRange TRange) {
 
 void Sema::CheckArrayAccess(const Expr *BaseExpr, const Expr *IndexExpr,
                             const ArraySubscriptExpr *ASE,
-                            bool AllowOnePastEnd, bool IndexNegated) {
+                            bool AllowOnePastEnd, bool IndexNegated,
+                            bool IsArraySubscript) {
   // Already diagnosed by the constant evaluator.
   if (isConstantEvaluatedContext())
     return;
@@ -17755,7 +17756,7 @@ void Sema::CheckArrayAccess(const Expr *BaseExpr, const Expr *IndexExpr,
       // Report a flex array that we can't determine the size of. (Boo!)
       Diag(BaseExpr->getBeginLoc(), diag::remark_array_access)
           << ArrayKind << OS.str();
-  } else {
+  } else if (IsArraySubscript) {
     Diag(BaseExpr->getBeginLoc(), diag::remark_array_access)
         << ArrayKind << OS.str();
   }
@@ -17941,7 +17942,7 @@ void Sema::CheckArrayAccess(const Expr *expr) {
       case Stmt::ArraySubscriptExprClass: {
         const ArraySubscriptExpr *ASE = cast<ArraySubscriptExpr>(expr);
         CheckArrayAccess(ASE->getBase(), ASE->getIdx(), ASE,
-                         AllowOnePastEnd > 0);
+                         AllowOnePastEnd > 0, false, true);
         expr = ASE->getBase();
         break;
       }

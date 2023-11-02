@@ -13768,7 +13768,8 @@ public:
 private:
   void CheckArrayAccess(const Expr *BaseExpr, const Expr *IndexExpr,
                         const ArraySubscriptExpr *ASE = nullptr,
-                        bool AllowOnePastEnd = true, bool IndexNegated = false);
+                        bool AllowOnePastEnd = true, bool IndexNegated = false,
+                        bool IsArraySubscript = false);
   void CheckArrayAccess(const Expr *E);
 
   bool CheckFunctionCall(FunctionDecl *FDecl, CallExpr *TheCall,
