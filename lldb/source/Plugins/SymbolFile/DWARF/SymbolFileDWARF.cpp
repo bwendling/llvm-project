@@ -46,7 +46,6 @@
 #include "lldb/Symbol/CompilerDeclContext.h"
 #include "lldb/Symbol/DebugMacros.h"
 #include "lldb/Symbol/LineTable.h"
-#include "lldb/Symbol/LocateSymbolFile.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Symbol/SymbolFile.h"
 #include "lldb/Symbol/TypeMap.h"
@@ -230,8 +229,15 @@ ParseSupportFilesFromPrologue(const lldb::ModuleSP &module,
         remapped_file = std::move(*file_path);
     }
 
+    Checksum checksum;
+    if (prologue.ContentTypes.HasMD5) {
+      const llvm::DWARFDebugLine::FileNameEntry &file_name_entry =
+          prologue.getFileNameEntry(idx);
+      checksum = file_name_entry.Checksum;
+    }
+
     // Unconditionally add an entry, so the indices match up.
-    support_files.EmplaceBack(remapped_file, style);
+    support_files.EmplaceBack(remapped_file, style, checksum);
   }
 
   return support_files;
@@ -4243,7 +4249,8 @@ void SymbolFileDWARF::DumpClangAST(Stream &s) {
   clang->Dump(s.AsRawOstream());
 }
 
-bool SymbolFileDWARF::GetSeparateDebugInfo(StructuredData::Dictionary &d) {
+bool SymbolFileDWARF::GetSeparateDebugInfo(StructuredData::Dictionary &d,
+                                           bool errors_only) {
   StructuredData::Array separate_debug_info_files;
   DWARFDebugInfo &info = DebugInfo();
   const size_t num_cus = info.GetNumUnits();
@@ -4296,7 +4303,8 @@ bool SymbolFileDWARF::GetSeparateDebugInfo(StructuredData::Dictionary &d) {
                               dwarf_cu->GetDwoError().AsCString("unknown"));
     }
     dwo_data->AddBooleanItem("loaded", dwo_symfile != nullptr);
-    separate_debug_info_files.AddItem(dwo_data);
+    if (!errors_only || dwo_data->HasKey("error"))
+      separate_debug_info_files.AddItem(dwo_data);
   }
 
   d.AddStringItem("type", "dwo");
@@ -4327,7 +4335,7 @@ const std::shared_ptr<SymbolFileDWARFDwo> &SymbolFileDWARF::GetDwpSymbolFile() {
 
     FileSpecList search_paths = Target::GetDefaultDebugFileSearchPaths();
     FileSpec dwp_filespec =
-        Symbols::LocateExecutableSymbolFile(module_spec, search_paths);
+        PluginManager::LocateExecutableSymbolFile(module_spec, search_paths);
     if (FileSystem::Instance().Exists(dwp_filespec)) {
       DataBufferSP dwp_file_data_sp;
       lldb::offset_t dwp_file_data_offset = 0;
