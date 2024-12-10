@@ -29,6 +29,7 @@
 #include "clang/AST/Expr.h"
 #include "clang/AST/OSLog.h"
 #include "clang/AST/OperationKinds.h"
+#include "clang/AST/StmtVisitor.h"
 #include "clang/AST/Type.h"
 #include "clang/Basic/TargetBuiltins.h"
 #include "clang/Basic/TargetInfo.h"
@@ -1028,61 +1029,210 @@ CodeGenFunction::evaluateOrEmitBuiltinObjectSize(const Expr *E, unsigned Type,
   return ConstantInt::get(ResType, ObjectSize, /*isSigned=*/true);
 }
 
-const FieldDecl *CodeGenFunction::FindFlexibleArrayMemberFieldAndOffset(
-    ASTContext &Ctx, const RecordDecl *RD, const FieldDecl *FAMDecl,
-    uint64_t &Offset) {
+namespace {
+
+/// StructFieldAccess is a simple visitor class to grab the first MemberExpr
+/// from an Expr.
+struct StructFieldAccess
+    : public ConstStmtVisitor<StructFieldAccess, const MemberExpr *> {
+  const ArraySubscriptExpr *ASE = nullptr;
+
+  const MemberExpr *VisitMemberExpr(const MemberExpr *E) { return E; }
+
+  const MemberExpr *VisitArraySubscriptExpr(const ArraySubscriptExpr *E) {
+    ASE = E;
+    return Visit(E->getBase());
+  }
+  const MemberExpr *VisitCastExpr(const CastExpr *E) {
+    return Visit(E->getSubExpr());
+  }
+  const MemberExpr *VisitParenExpr(const ParenExpr *E) {
+    return Visit(E->getSubExpr());
+  }
+  const MemberExpr *VisitUnaryAddrOf(const clang::UnaryOperator *E) {
+    return Visit(E->getSubExpr());
+  }
+  const MemberExpr *VisitUnaryDeref(const clang::UnaryOperator *E) {
+    return Visit(E->getSubExpr());
+  }
+};
+
+} // end anonymous namespace
+
+const FieldDecl *CodeGenFunction::FindFlexibleArrayMemberField(
+    ASTContext &Ctx, const RecordDecl *RD, const FieldDecl *FD) {
   const LangOptions::StrictFlexArraysLevelKind StrictFlexArraysLevel =
       getLangOpts().getStrictFlexArraysLevel();
-  uint32_t FieldNo = 0;
 
   if (RD->isImplicit())
     return nullptr;
 
-  for (const FieldDecl *FD : RD->fields()) {
-    if ((!FAMDecl || FD == FAMDecl) &&
+  for (const FieldDecl *Field : RD->fields()) {
+    if ((!FD || Field == FD) &&
         Decl::isFlexibleArrayMemberLike(
             Ctx, FD, FD->getType(), StrictFlexArraysLevel,
-            /*IgnoreTemplateOrMacroSubstitution=*/true)) {
-      const ASTRecordLayout &Layout = Ctx.getASTRecordLayout(RD);
-      Offset += Layout.getFieldOffset(FieldNo);
-      return FD;
-    }
+            /*IgnoreTemplateOrMacroSubstitution=*/true))
+      return Field;
 
-    QualType Ty = FD->getType();
-    if (Ty->isRecordType()) {
-      if (const FieldDecl *Field = FindFlexibleArrayMemberFieldAndOffset(
-              Ctx, Ty->getAsRecordDecl(), FAMDecl, Offset)) {
-        const ASTRecordLayout &Layout = Ctx.getASTRecordLayout(RD);
-        Offset += Layout.getFieldOffset(FieldNo);
+    if (auto RT = Field->getType()->getAs<RecordType>())
+      if (const FieldDecl *Field =
+              FindFlexibleArrayMemberField(Ctx, RT->getDecl(), FD))
         return Field;
-      }
-    }
-
-    if (!RD->isUnion())
-      ++FieldNo;
   }
 
   return nullptr;
 }
 
-static unsigned CountCountedByAttrs(const RecordDecl *RD) {
-  unsigned Num = 0;
+llvm::Value *
+CodeGenFunction::emitCountedByMemberSize(const Expr *E, llvm::Value *EmittedE,
+                                         unsigned Type,
+                                         llvm::IntegerType *ResType) {
+  // TODO: Support 'p->x', where 'x' is some field before the FAM or pointer.
+  // The pointer shouldn't add to the size calculation, but the FAM should.
+  ASTContext &Ctx = getContext();
+  StructFieldAccess Visitor;
 
-  for (const FieldDecl *FD : RD->fields()) {
-    if (FD->getType()->isCountAttributedType())
-      return ++Num;
+  if (!E->getType()->isPointerType())
+    return getDefaultBuiltinObjectSizeResult(Type, ResType);
 
-    QualType Ty = FD->getType();
-    if (Ty->isRecordType())
-      Num += CountCountedByAttrs(Ty->getAsRecordDecl());
+  const MemberExpr *ME = Visitor.Visit(E);
+  if (!ME)
+    return nullptr;
+
+  const Expr *Idx = nullptr;
+  if (Visitor.ASE) {
+    Idx = Visitor.ASE->getIdx();
+
+    if (Idx->HasSideEffects(Ctx))
+      // We can't have side-effects.
+      return getDefaultBuiltinObjectSizeResult(Type, ResType);
+
+    if (const auto *IL = dyn_cast<IntegerLiteral>(Idx)) {
+      int64_t Val = IL->getValue().getSExtValue();
+      if (Val < 0)
+        return getDefaultBuiltinObjectSizeResult(Type, ResType);
+
+      // The index is 0, so we don't need to take it into account.
+      if (Val == 0)
+        Idx = nullptr;
+    }
   }
 
-  return Num;
-}
+  const auto *FD = dyn_cast<FieldDecl>(ME->getMemberDecl());
+  if (!FD)
+    return nullptr;
 
-llvm::Value *
-CodeGenFunction::emitFlexibleArrayMemberSize(const Expr *E, unsigned Type,
-                                             llvm::IntegerType *ResType) {
+  const FieldDecl *CountFD = nullptr;
+  if (!FD->getType()->isCountAttributedType()) {
+    // Pointing at a FieldDecl within the struct that doesn't have the
+    // 'counted_by' attribute.
+    //
+    //     - If a flexible array member exists and has the 'counted_by'
+    //       attribute, then we use that.
+    //     - If no flexible array member exists, we default to the normal
+    //       '__builtin_dynamic_object_size()' behavior.
+    const RecordDecl *RD = FD->getDeclContext()->getOuterLexicalRecordContext();
+    if (!RD->hasFlexibleArrayMember())
+      return nullptr;
+
+    const FieldDecl *FAMDecl = FindFlexibleArrayMemberField(Ctx, RD, nullptr);
+    if (!FAMDecl || !FAMDecl->getType()->isCountAttributedType())
+      return nullptr;
+
+    CountFD = FAMDecl->findCountedByField();
+  }
+
+  if (!CountFD)
+    // Can't find the field referenced by the "counted_by" attribute.
+    return nullptr;
+
+  // Calculate the flexible array or pointer member's object size using this
+  // formula:
+  //
+  //    struct p;
+  //
+  //    struct s {
+  //        /* ... */
+  //        int count;
+  //        struct p *array[] __attribute__((counted_by(count)));
+  //    };
+  //
+  // Or:
+  //
+  //    struct s {
+  //        /* ... */
+  //        int count;
+  //        struct p **array __attribute__((counted_by(count)));
+  //    };
+  //
+  // For 'ptr->array':
+  //
+  //    size_t count = (size_t) ptr->count;
+  //    size_t size = count * sizeof (*ptr->array);
+  //
+  //    return count >= 0 ? size : 0;
+  //
+  // For '&ptr->array[idx]':
+  //
+  //    size_t count = (size_t) ptr->count - (size_t) idx;
+  //    size_t size = count * sizeof (*ptr->array);
+  //
+  //    return count >= 0 && idx >= 0 ? size : 0;
+  //
+  // Note: If the whole struct is specificed in the __bdos. The calculation of
+  // the whole size of the structure with a flexible array member can be done
+  // in two ways:
+  //
+  //     1) sizeof(struct S) + count * sizeof(typeof(fam))
+  //     2) offsetof(struct S, fam) + count * sizeof(typeof(fam))
+  //
+  // The first will add additional padding after the end of the array,
+  // allocation while the second method is more precise, but not quite expected
+  // from programmers. See
+  // https://lore.kernel.org/lkml/ZvV6X5FPBBW7CO1f@archlinux/ for a discussion
+  // of the topic.
+  //
+  // GCC isn't (currently) able to calculate __bdos on a pointer to the whole
+  // structure. Therefore, because of the above issue, we choose to match what
+  // GCC does for consistency's sake.
+
+  bool IsSigned = CountFD->getType()->isSignedIntegerType();
+  llvm::Type *CountTy = ConvertType(CountFD->getType());
+
+  // Build a load of the counted_by field.
+  std::optional<int64_t> Diff = getOffsetDifferenceInBits(CountFD, FD);
+  if (!Diff)
+    return nullptr;
+  Diff = *Diff / static_cast<int64_t>(CGM.getContext().getCharWidth());
+
+  Value *Res = EmittedE;
+  Res = Builder.CreatePointerBitCastOrAddrSpaceCast(Res, Int8PtrTy);
+  Res = Builder.CreateInBoundsGEP(Int8Ty, Res, Builder.getInt32(*Diff),
+                                  "counted_by.gep");
+  Res =
+      Builder.CreateAlignedLoad(CountTy, Res, getIntAlign(), "counted_by.load");
+  Res = Builder.CreateIntCast(Res, ResType, IsSigned);
+
+  const ArrayType *ArrayTy = Ctx.getAsArrayType(FD->getType());
+  CharUnits Size = Ctx.getTypeSizeInChars(ArrayTy->getElementType());
+  llvm::Constant *ElemSize =
+      llvm::ConstantInt::get(ResType, Size.getQuantity(), IsSigned);
+
+  Res = Builder.CreateMul(Res, ElemSize, "", !IsSigned, IsSigned);
+
+  // Subtract the index into the array from the result.
+  if (Idx) {
+    bool IdxSigned = Idx->getType()->isSignedIntegerType();
+    Value *IdxInst = EmitAnyExprToTemp(Idx).getScalarVal();
+    IdxInst = Builder.CreateIntCast(IdxInst, ResType, IdxSigned);
+    IdxInst = Builder.CreateMul(IdxInst, ElemSize, "", !IdxSigned, IdxSigned);
+    Res = Builder.CreateSub(Res, IdxInst);
+  }
+
+  return Builder.CreateSelect(Builder.CreateIsNotNeg(Res), Res,
+                              ConstantInt::get(ResType, 0, IsSigned));
+
+#if 0
   // The code generated here calculates the size of a struct with a flexible
   // array member that uses the counted_by attribute. There are two instances
   // we handle:
@@ -1186,8 +1336,7 @@ CodeGenFunction::emitFlexibleArrayMemberSize(const Expr *E, unsigned Type,
   // We call FindFlexibleArrayMemberAndOffset even if FAMDecl is non-null to
   // get its offset.
   uint64_t Offset = 0;
-  FAMDecl =
-      FindFlexibleArrayMemberFieldAndOffset(Ctx, OuterRD, FAMDecl, Offset);
+  FAMDecl = GetMemberDeclOffset(Ctx, OuterRD, FAMDecl, Offset);
   Offset = Ctx.toCharUnitsFromBits(Offset).getQuantity();
 
   if (!FAMDecl || !FAMDecl->getType()->isCountAttributedType())
@@ -1260,6 +1409,7 @@ CodeGenFunction::emitFlexibleArrayMemberSize(const Expr *E, unsigned Type,
     Cmp = Builder.CreateAnd(Builder.CreateIsNotNeg(IdxInst), Cmp);
 
   return Builder.CreateSelect(Cmp, Res, ConstantInt::get(ResType, 0, IsSigned));
+#endif
 }
 
 /// Returns a Value corresponding to the size of the given expression.
@@ -1294,13 +1444,6 @@ CodeGenFunction::emitBuiltinObjectSize(const Expr *E, unsigned Type,
     }
   }
 
-  if (IsDynamic) {
-    // Emit special code for a flexible array member with the "counted_by"
-    // attribute.
-    if (Value *V = emitFlexibleArrayMemberSize(E, Type, ResType))
-      return V;
-  }
-
   // LLVM can't handle Type=3 appropriately, and __builtin_object_size shouldn't
   // evaluate E for side-effects. In either case, we shouldn't lower to
   // @llvm.objectsize.
@@ -1310,6 +1453,13 @@ CodeGenFunction::emitBuiltinObjectSize(const Expr *E, unsigned Type,
   Value *Ptr = EmittedE ? EmittedE : EmitScalarExpr(E);
   assert(Ptr->getType()->isPointerTy() &&
          "Non-pointer passed to __builtin_object_size?");
+
+  if (IsDynamic) {
+    // Emit special code for a flexible array member with the "counted_by"
+    // attribute.
+    if (Value *ObjSize = emitCountedByMemberSize(E, Ptr, Type, ResType))
+      return ObjSize;
+  }
 
   Function *F =
       CGM.getIntrinsic(Intrinsic::objectsize, {ResType, Ptr->getType()});

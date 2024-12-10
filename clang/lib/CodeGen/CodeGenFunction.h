@@ -3298,13 +3298,11 @@ public:
                            llvm::Value *Index, QualType IndexType,
                            QualType IndexedType, bool Accessed);
 
-  // Find a struct's flexible array member and get its offset. It may be
-  // embedded inside multiple sub-structs, but must still be the last field.
-  const FieldDecl *
-  FindFlexibleArrayMemberFieldAndOffset(ASTContext &Ctx, const RecordDecl *RD,
-                                        const FieldDecl *FAMDecl,
-                                        uint64_t &Offset);
-
+  /// Find a struct's flexible array member. It may be embedded inside
+  /// multiple sub-structs, but must still be the last field.
+  const FieldDecl *FindFlexibleArrayMemberField(ASTContext &Ctx,
+                                                const RecordDecl *RD,
+                                                const FieldDecl *FAMDecl);
   llvm::Value *GetCountedByFieldExprGEP(const Expr *Base,
                                         const FieldDecl *FAMDecl,
                                         const FieldDecl *CountDecl);
@@ -3313,6 +3311,13 @@ public:
   llvm::Value *EmitLoadOfCountedByField(const Expr *Base,
                                         const FieldDecl *FAMDecl,
                                         const FieldDecl *CountDecl);
+
+  // Emit bounds checking for flexible array and pointer members with the
+  // counted_by attribute.
+  void EmitCountedByBoundsChecking(const Expr *E, llvm::Value *Idx,
+                                   Address Addr, QualType IdxTy,
+                                   QualType ArrayTy, bool Accessed,
+                                   bool FlexibleArray = false);
 
   llvm::Value *EmitScalarPrePostIncDec(const UnaryOperator *E, LValue LV,
                                        bool isInc, bool isPre);
@@ -5314,8 +5319,12 @@ private:
                                      llvm::Value *EmittedE,
                                      bool IsDynamic);
 
-  llvm::Value *emitFlexibleArrayMemberSize(const Expr *E, unsigned Type,
-                                           llvm::IntegerType *ResType);
+  llvm::Value *emitCountedByMemberSize(const Expr *E, llvm::Value *EmittedE,
+                                       unsigned Type,
+                                       llvm::IntegerType *ResType);
+
+  std::optional<int64_t> getOffsetDifferenceInBits(const FieldDecl *FD1,
+                                                   const FieldDecl *FD2);
 
   void emitZeroOrPatternForAutoVarInit(QualType type, const VarDecl &D,
                                        Address Loc);
