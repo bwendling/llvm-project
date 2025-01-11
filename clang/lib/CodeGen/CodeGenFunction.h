@@ -3340,6 +3340,13 @@ public:
                                         const FieldDecl *FAMDecl,
                                         const FieldDecl *CountDecl);
 
+  // Emit bounds checking for flexible array and pointer members with the
+  // counted_by attribute.
+  void EmitCountedByBoundsChecking(const Expr *E, llvm::Value *Idx,
+                                   Address Addr, QualType IdxTy,
+                                   QualType ArrayTy, bool Accessed,
+                                   bool FlexibleArray);
+
   llvm::Value *EmitScalarPrePostIncDec(const UnaryOperator *E, LValue LV,
                                        bool isInc, bool isPre);
   ComplexPairTy EmitComplexPrePostIncDec(const UnaryOperator *E, LValue LV,

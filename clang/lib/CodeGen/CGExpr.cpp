@@ -4244,6 +4244,52 @@ static std::optional<int64_t> getOffsetDifferenceInBits(CodeGenFunction &CGF,
   return std::make_optional<int64_t>(FD1Offset - FD2Offset);
 }
 
+/// EmitCountedByBoundsChecking - If the array being accessed has a "counted_by"
+/// attribute, generate bounds checking code. The "count" field is at the top
+/// level of the struct or in an anonymous struct, that's also at the top level.
+/// Future expansions may allow the "count" to reside at any place in the
+/// struct, but the value of "counted_by" will be a "simple" path to the count,
+/// i.e. "a.b.count", so we shouldn't need the full force of EmitLValue or
+/// similar to emit the correct GEP.
+void CodeGenFunction::EmitCountedByBoundsChecking(
+    const Expr *E, llvm::Value *Idx, Address Addr, QualType IdxTy,
+    QualType ArrayTy, bool Accessed, bool FlexibleArray) {
+  const auto *ME = dyn_cast<MemberExpr>(E->IgnoreImpCasts());
+  if (!ME || !ME->getMemberDecl()->getType()->isCountAttributedType())
+    return;
+
+  const LangOptions::StrictFlexArraysLevelKind StrictFlexArraysLevel =
+      getLangOpts().getStrictFlexArraysLevel();
+  if (FlexibleArray &&
+      !ME->isFlexibleArrayMemberLike(getContext(), StrictFlexArraysLevel))
+    return;
+
+  const FieldDecl *FD = cast<FieldDecl>(ME->getMemberDecl());
+  const FieldDecl *CountFD = FD->findCountedByField();
+  if (!CountFD)
+    return;
+
+  if (std::optional<int64_t> Diff = getOffsetDifferenceInBits(*this, CountFD, FD)) {
+    // FIXME: The 'static_cast' is necessary, otherwise the result turns into a
+    // uint64_t, which messes things up if we have a negative offset difference.
+    Diff = *Diff / static_cast<int64_t>(CGM.getContext().getCharWidth());
+
+    // Create a GEP with the byte offset between the counted object and the
+    // count and use that to load the count value.
+    Addr = Builder.CreatePointerBitCastOrAddrSpaceCast(Addr, Int8PtrTy, Int8Ty);
+
+    llvm::Type *CountTy = ConvertType(CountFD->getType());
+    llvm::Value *Res = Builder.CreateInBoundsGEP(
+        Int8Ty, Addr.emitRawPointer(*this),
+        Builder.getInt32(*Diff), ".counted_by.gep");
+    Res = Builder.CreateAlignedLoad(CountTy, Res, getIntAlign(),
+                                    ".counted_by.load");
+
+    // Now emit the bounds checking.
+    EmitBoundsCheckImpl(E, Res, Idx, IdxTy, ArrayTy, Accessed);
+  }
+}
+
 LValue CodeGenFunction::EmitArraySubscriptExpr(const ArraySubscriptExpr *E,
                                                bool Accessed) {
   // The index must always be an integer, which is not an aggregate.  Emit it
@@ -4370,46 +4416,10 @@ LValue CodeGenFunction::EmitArraySubscriptExpr(const ArraySubscriptExpr *E,
       ArrayLV = EmitLValue(Array);
     auto *Idx = EmitIdxAfterBase(/*Promote*/true);
 
-    if (SanOpts.has(SanitizerKind::ArrayBounds)) {
-      // If the array being accessed has a "counted_by" attribute, generate
-      // bounds checking code. The "count" field is at the top level of the
-      // struct or in an anonymous struct, that's also at the top level. Future
-      // expansions may allow the "count" to reside at any place in the struct,
-      // but the value of "counted_by" will be a "simple" path to the count,
-      // i.e. "a.b.count", so we shouldn't need the full force of EmitLValue or
-      // similar to emit the correct GEP.
-      const LangOptions::StrictFlexArraysLevelKind StrictFlexArraysLevel =
-          getLangOpts().getStrictFlexArraysLevel();
-
-      if (const auto *ME = dyn_cast<MemberExpr>(Array);
-          ME &&
-          ME->isFlexibleArrayMemberLike(getContext(), StrictFlexArraysLevel) &&
-          ME->getMemberDecl()->getType()->isCountAttributedType()) {
-        const FieldDecl *FAMDecl = cast<FieldDecl>(ME->getMemberDecl());
-        if (const FieldDecl *CountFD = FAMDecl->findCountedByField()) {
-          if (std::optional<int64_t> Diff =
-                  getOffsetDifferenceInBits(*this, CountFD, FAMDecl)) {
-            CharUnits OffsetDiff = CGM.getContext().toCharUnitsFromBits(*Diff);
-
-            // Create a GEP with a byte offset between the FAM and count and
-            // use that to load the count value.
-            Addr = Builder.CreatePointerBitCastOrAddrSpaceCast(
-                ArrayLV.getAddress(), Int8PtrTy, Int8Ty);
-
-            llvm::Type *CountTy = ConvertType(CountFD->getType());
-            llvm::Value *Res = Builder.CreateInBoundsGEP(
-                Int8Ty, Addr.emitRawPointer(*this),
-                Builder.getInt32(OffsetDiff.getQuantity()), ".counted_by.gep");
-            Res = Builder.CreateAlignedLoad(CountTy, Res, getIntAlign(),
-                                            ".counted_by.load");
-
-            // Now emit the bounds checking.
-            EmitBoundsCheckImpl(E, Res, Idx, E->getIdx()->getType(),
-                                Array->getType(), Accessed);
-          }
-        }
-      }
-    }
+    if (SanOpts.has(SanitizerKind::ArrayBounds))
+      EmitCountedByBoundsChecking(Array, Idx, ArrayLV.getAddress(),
+                                  E->getIdx()->getType(), Array->getType(),
+                                  Accessed, /*FlexibleArray=*/true);
 
     // Propagate the alignment from the array itself to the result.
     QualType arrayType = Array->getType();
@@ -4427,6 +4437,11 @@ LValue CodeGenFunction::EmitArraySubscriptExpr(const ArraySubscriptExpr *E,
     Addr = emitArraySubscriptGEP(
         *this, Addr, Idx, E->getType(), !getLangOpts().PointerOverflowDefined,
         SignedIndices, E->getExprLoc(), &ptrType, E->getBase());
+
+    if (SanOpts.has(SanitizerKind::ArrayBounds))
+      EmitCountedByBoundsChecking(E->getBase(), Idx, Addr,
+                                  E->getIdx()->getType(), ptrType, Accessed,
+                                  /*FlexibleArray=*/false);
   }
 
   LValue LV = MakeAddrLValue(Addr, E->getType(), EltBaseInfo, EltTBAAInfo);
