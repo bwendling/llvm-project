@@ -4441,10 +4441,29 @@ LValue CodeGenFunction::EmitArraySubscriptExpr(const ArraySubscriptExpr *E,
                                  E->getBase());
 
     if (SanOpts.has(SanitizerKind::ArrayBounds)) {
-      if (auto *LI = dyn_cast<llvm::LoadInst>(BaseAddr.getBasePointer())) {
-        Address Base(LI->getPointerOperand(), BaseAddr.getType(),
-                     BaseAddr.getAlignment());
-        EmitCountedByBoundsChecking(E->getBase(), Idx, Base,
+      // Support 'counted_by' on struct pointer fields. We expect to find an
+      // LValueToRValue implicit cast somewhere in the Expr. Once we find that,
+      // we can emit it along with the check.
+      const Expr *Base = E->getBase();
+      while (!isa<MemberExpr>(Base) && !isa<DeclRefExpr>(Base)) {
+        if (const auto *CE = dyn_cast<CastExpr>(Base)) {
+          if (CE->getCastKind() == CK_LValueToRValue)
+            break;
+          Base = CE->getSubExpr();
+        } else if (const auto *PE = dyn_cast<ParenExpr>(Base)) {
+          Base = PE->getSubExpr();
+        } else {
+          // It's something else. Maybe it's something we can deal with? Only
+          // time will tell.
+          break;
+        }
+      }
+
+      if (const auto *CE = dyn_cast<ImplicitCastExpr>(Base);
+          CE && CE->getCastKind() == CK_LValueToRValue &&
+          isa<MemberExpr>(CE->getSubExpr())) {
+        LValue LV = EmitLValue(Base);
+        EmitCountedByBoundsChecking(Base, Idx, LV.getAddress(),
                                     E->getIdx()->getType(), ptrType, Accessed,
                                     /*FlexibleArray=*/false);
       }
