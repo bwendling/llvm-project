@@ -4431,18 +4431,23 @@ LValue CodeGenFunction::EmitArraySubscriptExpr(const ArraySubscriptExpr *E,
     EltTBAAInfo = CGM.getTBAAInfoForSubobject(ArrayLV, E->getType());
   } else {
     // The base must be a pointer; emit it with an estimate of its alignment.
-    Addr = EmitPointerWithAlignment(E->getBase(), &EltBaseInfo, &EltTBAAInfo);
+    Address BaseAddr =
+        EmitPointerWithAlignment(E->getBase(), &EltBaseInfo, &EltTBAAInfo);
     auto *Idx = EmitIdxAfterBase(/*Promote*/true);
     QualType ptrType = E->getBase()->getType();
-    Addr = emitArraySubscriptGEP(
-        *this, Addr, Idx, E->getType(), !getLangOpts().PointerOverflowDefined,
-        SignedIndices, E->getExprLoc(), &ptrType, E->getBase());
+    Addr = emitArraySubscriptGEP(*this, BaseAddr, Idx, E->getType(),
+                                 !getLangOpts().PointerOverflowDefined,
+                                 SignedIndices, E->getExprLoc(), &ptrType,
+                                 E->getBase());
 
     if (SanOpts.has(SanitizerKind::ArrayBounds)) {
-      LValue Base = EmitLValue(E->getBase());
-      EmitCountedByBoundsChecking(E->getBase(), Idx, Base.getAddress(),
-                                  E->getIdx()->getType(), ptrType, Accessed,
-                                  /*FlexibleArray=*/false);
+      if (auto *LI = dyn_cast<llvm::LoadInst>(BaseAddr.getBasePointer())) {
+        Address Base(LI->getPointerOperand(), BaseAddr.getType(),
+                     BaseAddr.getAlignment());
+        EmitCountedByBoundsChecking(E->getBase(), Idx, Base,
+                                    E->getIdx()->getType(), ptrType, Accessed,
+                                    /*FlexibleArray=*/false);
+      }
     }
   }
 
