@@ -4438,10 +4438,12 @@ LValue CodeGenFunction::EmitArraySubscriptExpr(const ArraySubscriptExpr *E,
         *this, Addr, Idx, E->getType(), !getLangOpts().PointerOverflowDefined,
         SignedIndices, E->getExprLoc(), &ptrType, E->getBase());
 
-    if (SanOpts.has(SanitizerKind::ArrayBounds))
-      EmitCountedByBoundsChecking(E->getBase(), Idx, Addr,
+    if (SanOpts.has(SanitizerKind::ArrayBounds)) {
+      LValue Base = EmitLValue(E->getBase());
+      EmitCountedByBoundsChecking(E->getBase(), Idx, Base.getAddress(),
                                   E->getIdx()->getType(), ptrType, Accessed,
                                   /*FlexibleArray=*/false);
+    }
   }
 
   LValue LV = MakeAddrLValue(Addr, E->getType(), EltBaseInfo, EltTBAAInfo);
