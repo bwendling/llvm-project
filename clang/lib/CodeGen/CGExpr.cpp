@@ -4443,12 +4443,30 @@ LValue CodeGenFunction::EmitArraySubscriptExpr(const ArraySubscriptExpr *E,
     if (SanOpts.has(SanitizerKind::ArrayBounds)) {
       // FIXME: There *has* to be a better way to get the base GEP than
       // crawling back through the LoadInst.
-      if (auto *LI = dyn_cast<llvm::LoadInst>(BaseAddr.getBasePointer())) {
-        BaseAddr = Address(LI->getPointerOperand(), BaseAddr.getElementType(),
-                           BaseAddr.getAlignment());
-        EmitCountedByBoundsChecking(E->getBase(), Idx, BaseAddr,
-                                    E->getIdx()->getType(), ptrType, Accessed,
-                                    /*FlexibleArray=*/false);
+      const Expr *Base = E->getBase();
+      while (true) {
+        if (const auto *CE = dyn_cast<CastExpr>(Base)) {
+          if (CE->getCastKind() == CK_LValueToRValue)
+            break;
+          Base = CE->getSubExpr();
+        } else if (const auto *PE = dyn_cast<ParenExpr>(Base)) {
+          Base = PE->getSubExpr();
+        } else {
+          break;
+        }
+      }
+
+      if (const auto *CE = dyn_cast<CastExpr>(Base);
+          CE && CE->getCastKind() == CK_LValueToRValue) {
+        // FIXME: This is a bit fragile. See if we can strengthen it a bit
+        // better.
+        if (const auto *ME = dyn_cast<MemberExpr>(CE->getSubExpr());
+            ME && ME->getMemberDecl()->getType()->isCountAttributedType()) {
+          LValue LV = EmitCheckedLValue(Base, TCK_MemberAccess);
+          EmitCountedByBoundsChecking(E->getBase(), Idx, LV.getAddress(),
+                                      E->getIdx()->getType(), ptrType, Accessed,
+                                      /*FlexibleArray=*/false);
+        }
       }
     }
   }
