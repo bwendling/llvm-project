@@ -173,6 +173,9 @@ public:
     /// return true, otherwise return false.
     LLVM_ABI bool Parse(StringRef Str, ConstraintInfoVector &ConstraintsSoFar);
 
+    /// stringify - Generate a string from the parsed constraint info.
+    LLVM_ABI std::string stringify();
+
     /// selectAlternative - Point this constraint to the alternative constraint
     /// indicated by the index.
     LLVM_ABI void selectAlternative(unsigned index);
@@ -188,6 +191,9 @@ public:
   /// the constraint string itself isn't empty, there was an error parsing.
   LLVM_ABI static ConstraintInfoVector
   ParseConstraints(StringRef ConstraintString);
+
+  LLVM_ABI static std::string
+  StringifyConstraints(ConstraintInfoVector &V);
 
   /// ParseConstraints - Parse the constraints of this inlineasm object,
   /// returning them the same way that ParseConstraints(str) does.

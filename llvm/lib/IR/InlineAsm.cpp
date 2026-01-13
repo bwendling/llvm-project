@@ -220,6 +220,55 @@ bool InlineAsm::ConstraintInfo::Parse(StringRef Str,
   return false;
 }
 
+/// stringify - Generate a string from the parsed constraint info.
+std::string InlineAsm::ConstraintInfo::stringify() {
+  std::string ConstraintStr;
+
+  switch (Type) {
+  case InlineAsm::isInput:    // 'x'
+    break;
+  case InlineAsm::isOutput:   // '=x'
+    ConstraintStr += '=';
+    break;
+  case InlineAsm::isClobber:  // '~x'
+    ConstraintStr += '~';
+    break;
+  case InlineAsm::isLabel:    // '!x'
+    ConstraintStr += '!';
+    break;
+  }
+
+  if (isIndirect)
+    ConstraintStr += '*';
+
+  // There can be only one of each of these modifiers.
+  if (isEarlyClobber)
+    ConstraintStr += '&';
+  if (isCommutative)
+    ConstraintStr += '%';
+
+  if (isMultipleAlternative) {
+    for (unsigned I = 0; I != multipleAlternatives.size(); ++I) {
+      for (auto &Code : multipleAlternatives[I].Codes) {
+        if (Code.size() == 2)
+          ConstraintStr += '^';
+        ConstraintStr += Code;
+      }
+
+      if (I != multipleAlternatives.size() - 1)
+        ConstraintStr += '|';
+    }
+  } else {
+    for (auto &Code : Codes) {
+      if (Code.size() == 2)
+        ConstraintStr += '^';
+      ConstraintStr += Code;
+    }
+  }
+
+  return ConstraintStr;
+}
+
 /// selectAlternative - Point this constraint to the alternative constraint
 /// indicated by the index.
 void InlineAsm::ConstraintInfo::selectAlternative(unsigned index) {
@@ -265,6 +314,16 @@ InlineAsm::ParseConstraints(StringRef Constraints) {
   }
 
   return Result;
+}
+
+std::string
+InlineAsm::StringifyConstraints(InlineAsm::ConstraintInfoVector &Vec) {
+  std::string ConstraintStr;
+
+  for (ConstraintInfo &CI : Vec) {
+  }
+
+  return ConstraintStr;
 }
 
 static Error makeStringError(const char *Msg) {
