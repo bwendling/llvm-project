@@ -17,6 +17,7 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/Module.h"
 #include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
 #include <sstream>
@@ -66,14 +67,63 @@ static SmallVector<CallBase *, 4> findInlineAsms(Function &F) {
   return InlineAsms;
 }
 
-bool InlineAsmPrepare::runOnFunction(Function &F) {
-  bool Changed = false;
-  SmallVector<CallBase *, 4> IAs = findInlineAsms(F);
+static bool isRegMemConstraint(StringRef Constraint) {
+  return Constraint.size() == 2 && is_contained(Constraint, "r") &&
+    is_contained(Constraint, "m");
+}
 
+// Convert instances of the "rm" constraints into "m".
+static std::string convertConstraintsToMemory(StringRef ConstraintStr) {
+  auto I = ConstraintStr.begin(), E = ConstraintStr.end();
+  std::ostringstream Out;
+
+  while (I != E) {
+    if (*I == '=') {
+      Out << *I;
+      ++I;
+    }
+    if (*I == '*') {
+      Out << '*';
+      ++I;
+    }
+    if (*I == '+') {
+      Out << '+';
+      ++I;
+    }
+
+    auto Comma = std::find(I, E, ',');
+    std::string Sub(I, Comma);
+    if (isRegMemConstraint(Sub))
+      Out << 'm';
+    else
+      Out << Sub;
+
+    if (Comma == E)
+      break;
+
+    Out << ',';
+    I = Comma + 1;
+  }
+
+  return Out.str();
+}
+
+bool InlineAsmPrepare::runOnFunction(Function &F) {
+  // Only process "rm" on x86 platforms.
+  if (F.getParent()->getTargetTriple().getArch() != Triple::x86 &&
+      F.getParent()->getTargetTriple().getArch() != Triple::x86_64)
+    return false;
+
+  SmallVector<CallBase *, 4> IAs = findInlineAsms(F);
+  if (IAs.empty())
+    return false;
+
+  bool Changed = false;
   for (CallBase *CB : IAs) {
     InlineAsm *IA = cast<InlineAsm>(CB->getCalledOperand());
     InlineAsm::ConstraintInfoVector Constraints = IA->ParseConstraints();
 
+#if 0
     for (auto &C : Constraints) {
       errs() << "Type: " << C.Type << "\n"
              << "Early Clobber: " << C.isEarlyClobber << "\n"
@@ -97,6 +147,13 @@ bool InlineAsmPrepare::runOnFunction(Function &F) {
         errs() << "Needs processing.\n";
       }
     }
+#endif
+
+    std::string NewConstraintStr =
+        convertConstraintsToMemory(IA->getConstraintString());
+
+    errs() << "OLD CONSTRAINT STR: " << IA->getConstraintString() << "\n";
+    errs() << "NEW CONSTRAINT STR: " << NewConstraintStr << "\n";
   }
 
   return Changed;

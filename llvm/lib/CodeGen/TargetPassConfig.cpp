@@ -1109,12 +1109,6 @@ static cl::opt<RegisterRegAlloc::FunctionPassCtor, false,
     RegAlloc("regalloc", cl::Hidden, cl::init(&useDefaultRegisterAllocator),
              cl::desc("Register allocator to use"));
 
-bool llvm::usesGreedyOrDefaultRegisterAllocator() {
-  return RegAlloc == (RegisterRegAlloc::
-                          FunctionPassCtor)&createGreedyRegisterAllocator ||
-         RegAlloc == &useDefaultRegisterAllocator;
-}
-
 /// Add the complete set of target-independent postISel code generator passes.
 ///
 /// This can be read as the standard order of major LLVM CodeGen stages. Stages

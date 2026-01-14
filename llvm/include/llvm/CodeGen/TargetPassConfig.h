@@ -478,8 +478,6 @@ protected:
 LLVM_ABI void registerCodeGenCallback(PassInstrumentationCallbacks &PIC,
                                       TargetMachine &);
 
-bool usesGreedyOrDefaultRegisterAllocator();
-
 } // end namespace llvm
 
 #endif // LLVM_CODEGEN_TARGETPASSCONFIG_H
