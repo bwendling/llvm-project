@@ -125,7 +125,7 @@ bool InlineAsmPrepare::runOnFunction(Function &F) {
   if (IAs.empty())
     return false;
 
-  // errs() << "OLD: "; F.dump();
+  errs() << "OLD: "; F.dump();
 
   bool Changed = false;
   for (CallBase *CB : IAs) {
@@ -176,7 +176,13 @@ bool InlineAsmPrepare::runOnFunction(Function &F) {
     unsigned ArgNo = 0;
     unsigned OutputIdx = 0;
     for (const auto &C : Constraints) {
-      if (!C.Codes.empty() && isRegMemConstraint(C.Codes[0])) {
+      bool HasReg = false;
+      bool HasMem = false;
+      for (const auto &Code : C.Codes) {
+        if (Code.find('r') != std::string::npos) HasReg = true;
+        if (Code.find('m') != std::string::npos) HasMem = true;
+      }
+      if (HasReg && HasMem) {
         Type *SlotTy = nullptr;
         if (C.Type == InlineAsm::isOutput && !C.hasMatchingInput()) {
           // Output-only
@@ -219,12 +225,12 @@ bool InlineAsmPrepare::runOnFunction(Function &F) {
         }
       }
 
-      if (C.Type == InlineAsm::isOutput || C.Type == InlineAsm::isInput) {
+      if (C.hasArg()) {
         ArgNo++;
       }
 
-      if (C.Type == InlineAsm::isOutput && !C.hasMatchingInput()) {
-        OutputIdx++;
+      if (C.hasArg()) {
+        ArgNo++;
       }
     }
 
