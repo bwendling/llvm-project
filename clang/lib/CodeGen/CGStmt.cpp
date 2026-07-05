@@ -2779,9 +2779,9 @@ static void EmitHipStdParUnsupportedAsm(CodeGenFunction *CGF,
 
 /// Returns true if the raw constraint string contains a general-memory code
 /// ('m' or 'g') as a standalone constraint code (not inside a braced hard-
-/// register specifier like "{xmm0}"). This mirrors the backend's MayFoldRegister
-/// condition, which only activates for 'm' (general memory) — not broader
-/// alternatives like 'o' (offsettable) or 'V' (non-offsettable).
+/// register specifier like "{xmm0}"). This mirrors the backend's
+/// MayFoldRegister condition, which only activates for 'm' (general memory) —
+/// not broader alternatives like 'o' (offsettable) or 'V' (non-offsettable).
 static bool constraintHasGeneralMem(StringRef RawConstraint) {
   bool InBrace = false;
   for (char C : RawConstraint) {
