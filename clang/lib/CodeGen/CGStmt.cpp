@@ -2777,6 +2777,24 @@ static void EmitHipStdParUnsupportedAsm(CodeGenFunction *CGF,
   CGF->Builder.CreateCall(UBF, {StrTy});
 }
 
+/// Returns true if the raw constraint string contains a general-memory code
+/// ('m' or 'g') as a standalone constraint code (not inside a braced hard-
+/// register specifier like "{xmm0}"). This mirrors the backend's MayFoldRegister
+/// condition, which only activates for 'm' (general memory) — not broader
+/// alternatives like 'o' (offsettable) or 'V' (non-offsettable).
+static bool constraintHasGeneralMem(StringRef RawConstraint) {
+  bool InBrace = false;
+  for (char C : RawConstraint) {
+    if (C == '{')
+      InBrace = true;
+    else if (C == '}')
+      InBrace = false;
+    else if (!InBrace && (C == 'm' || C == 'g'))
+      return true;
+  }
+  return false;
+}
+
 /// Gather and validate the output and input constraints for the given inline
 /// assembly statement. This ensures that the constraints are valid for the
 /// target and prepares them for further processing.
@@ -2869,8 +2887,15 @@ void CodeGenFunction::HandleOutputConstraints(const AsmStmt &S,
     QualType QTy = OutExpr->getType();
     const bool IsScalarOrAggregate =
         hasScalarEvaluationKind(QTy) || hasAggregateEvaluationKind(QTy);
+    // Only treat as register-memory when the constraint contains the literal
+    // 'm' or 'g' code. The backend's MayFoldRegister flag (which drives the
+    // register preference at -O1+) is set only for 'm', not for broader memory
+    // alternatives like 'o' (offsettable). Emitting broader constraints like
+    // "=ro" as a direct return value would cause the backend to select 'o'
+    // (C_Memory) for a non-indirect output, hitting an assertion.
     const bool RegisterMemoryConstraints =
-        AsmInfo.PreferRegs && Info.allowsRegister() && Info.allowsMemory();
+        AsmInfo.PreferRegs && Info.allowsRegister() &&
+        constraintHasGeneralMem(Info.getConstraintStr());
 
     if (IsScalarOrAggregate &&
         (!Info.allowsMemory() || RegisterMemoryConstraints)) {
@@ -3333,7 +3358,8 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
                    }) &&
       llvm::any_of(OutputConstraintInfos,
                    [](const TargetInfo::ConstraintInfo &Info) {
-                     return Info.allowsRegister() && Info.allowsMemory();
+                     return Info.allowsRegister() &&
+                            constraintHasGeneralMem(Info.getConstraintStr());
                    });
 
   llvm::BasicBlock *PrefRegBlock = nullptr;
