@@ -643,12 +643,16 @@ setCUDAAttributes(mlir::func::FuncOp func,
                 .detailsIf<Fortran::semantics::SubprogramDetails>()) {
       mlir::Type i64Ty = mlir::IntegerType::get(func.getContext(), 64);
       if (!details->cudaLaunchBounds().empty()) {
-        assert(details->cudaLaunchBounds().size() >= 2 &&
-               "expect at least 2 values");
+        assert(details->cudaLaunchBounds().size() >= 1 &&
+               details->cudaLaunchBounds().size() <= 3 &&
+               "expect 1, 2, or 3 values");
         auto maxTPBAttr =
             mlir::IntegerAttr::get(i64Ty, details->cudaLaunchBounds()[0]);
-        auto minBPMAttr =
-            mlir::IntegerAttr::get(i64Ty, details->cudaLaunchBounds()[1]);
+        // The minimum-blocks-per-multiprocessor operand is optional.
+        mlir::IntegerAttr minBPMAttr;
+        if (details->cudaLaunchBounds().size() > 1)
+          minBPMAttr =
+              mlir::IntegerAttr::get(i64Ty, details->cudaLaunchBounds()[1]);
         mlir::IntegerAttr ubAttr;
         if (details->cudaLaunchBounds().size() > 2)
           ubAttr =
@@ -1212,6 +1216,9 @@ private:
           if (isBuiltinCptrType) {
             auto recTy = mlir::dyn_cast<fir::RecordType>(type);
             mlir::Type fieldTy = recTy.getTypeList()[0].second;
+            if (fir::isa_builtin_cdevptr_type(type))
+              fieldTy =
+                  mlir::cast<fir::RecordType>(fieldTy).getTypeList()[0].second;
             passType = fir::ReferenceType::get(fieldTy);
           } else {
             passType = type;
