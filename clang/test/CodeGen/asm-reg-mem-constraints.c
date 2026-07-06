@@ -4,7 +4,7 @@
 // CHECK-LABEL: define dso_local void @test_reg_mem_inputs(
 // CHECK-SAME: i32 noundef [[FLAGS:%.*]]) local_unnamed_addr #[[ATTR0:[0-9]+]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
-// CHECK-NEXT:    tail call void asm sideeffect "", "rm,~{dirflag},~{fpsr},~{flags}"(i32 [[FLAGS]]) #[[ATTR4:[0-9]+]], !srcloc [[META6:![0-9]+]]
+// CHECK-NEXT:    tail call void asm sideeffect "", "rm,~{dirflag},~{fpsr},~{flags}"(i32 [[FLAGS]]) #[[ATTR4:[0-9]+]], !srcloc [[META7:![0-9]+]]
 // CHECK-NEXT:    ret void
 //
 void test_reg_mem_inputs(unsigned long flags) {
@@ -19,11 +19,11 @@ void test_reg_mem_inputs(unsigned long flags) {
 // CHECK-NEXT:    callbr void @llvm.asm.constraint.br()
 // CHECK-NEXT:            to label %[[ASM_PREF_REG:.*]] [label %[[ASM_PREF_MEM:.*]]]
 // CHECK:       [[ASM_PREF_REG]]:
-// CHECK-NEXT:    [[TMP0:%.*]] = tail call i32 asm "", "=rm,~{dirflag},~{fpsr},~{flags}"() #[[ATTR5:[0-9]+]], !srcloc [[META7:![0-9]+]]
+// CHECK-NEXT:    [[TMP0:%.*]] = tail call i32 asm "", "=rm,~{dirflag},~{fpsr},~{flags}"() #[[ATTR5:[0-9]+]], !srcloc [[META8:![0-9]+]]
 // CHECK-NEXT:    br label %[[ASM_MERGE:.*]]
 // CHECK:       [[ASM_PREF_MEM]]:
-// CHECK-NEXT:    call void asm "", "=*rm,~{dirflag},~{fpsr},~{flags}"(ptr nonnull elementtype(i32) [[OUT]]) #[[ATTR4]], !srcloc [[META7]]
-// CHECK-NEXT:    [[DOTPRE:%.*]] = load i32, ptr [[OUT]], align 4, !tbaa [[LONG_TBAA8:![0-9]+]]
+// CHECK-NEXT:    call void asm "", "=*rm,~{dirflag},~{fpsr},~{flags}"(ptr nonnull elementtype(i32) [[OUT]]) #[[ATTR4]], !srcloc [[META8]]
+// CHECK-NEXT:    [[DOTPRE:%.*]] = load i32, ptr [[OUT]], align 4, !tbaa [[LONG_TBAA9:![0-9]+]]
 // CHECK-NEXT:    br label %[[ASM_MERGE]]
 // CHECK:       [[ASM_MERGE]]:
 // CHECK-NEXT:    [[TMP1:%.*]] = phi i32 [ [[TMP0]], %[[ASM_PREF_REG]] ], [ [[DOTPRE]], %[[ASM_PREF_MEM]] ]
@@ -39,7 +39,7 @@ unsigned long test_reg_mem_outputs(void) {
 // CHECK-LABEL: define dso_local void @test_g_inputs(
 // CHECK-SAME: i32 noundef [[FLAGS:%.*]]) local_unnamed_addr #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
-// CHECK-NEXT:    tail call void asm sideeffect "", "imr,~{dirflag},~{fpsr},~{flags}"(i32 [[FLAGS]]) #[[ATTR4]], !srcloc [[META10:![0-9]+]]
+// CHECK-NEXT:    tail call void asm sideeffect "", "imr,~{dirflag},~{fpsr},~{flags}"(i32 [[FLAGS]]) #[[ATTR4]], !srcloc [[META11:![0-9]+]]
 // CHECK-NEXT:    ret void
 //
 void test_g_inputs(unsigned long flags) {
@@ -54,11 +54,11 @@ void test_g_inputs(unsigned long flags) {
 // CHECK-NEXT:    callbr void @llvm.asm.constraint.br()
 // CHECK-NEXT:            to label %[[ASM_PREF_REG:.*]] [label %[[ASM_PREF_MEM:.*]]]
 // CHECK:       [[ASM_PREF_REG]]:
-// CHECK-NEXT:    [[TMP0:%.*]] = tail call i32 asm "", "=imr,~{dirflag},~{fpsr},~{flags}"() #[[ATTR5]], !srcloc [[META11:![0-9]+]]
+// CHECK-NEXT:    [[TMP0:%.*]] = tail call i32 asm "", "=imr,~{dirflag},~{fpsr},~{flags}"() #[[ATTR5]], !srcloc [[META12:![0-9]+]]
 // CHECK-NEXT:    br label %[[ASM_MERGE:.*]]
 // CHECK:       [[ASM_PREF_MEM]]:
-// CHECK-NEXT:    call void asm "", "=*imr,~{dirflag},~{fpsr},~{flags}"(ptr nonnull elementtype(i32) [[OUT]]) #[[ATTR4]], !srcloc [[META11]]
-// CHECK-NEXT:    [[DOTPRE:%.*]] = load i32, ptr [[OUT]], align 4, !tbaa [[LONG_TBAA8]]
+// CHECK-NEXT:    call void asm "", "=*imr,~{dirflag},~{fpsr},~{flags}"(ptr nonnull elementtype(i32) [[OUT]]) #[[ATTR4]], !srcloc [[META12]]
+// CHECK-NEXT:    [[DOTPRE:%.*]] = load i32, ptr [[OUT]], align 4, !tbaa [[LONG_TBAA9]]
 // CHECK-NEXT:    br label %[[ASM_MERGE]]
 // CHECK:       [[ASM_MERGE]]:
 // CHECK-NEXT:    [[TMP1:%.*]] = phi i32 [ [[TMP0]], %[[ASM_PREF_REG]] ], [ [[DOTPRE]], %[[ASM_PREF_MEM]] ]
@@ -75,14 +75,14 @@ unsigned long test_g_outputs(void) {
 // CHECK-SAME: i32 noundef [[LEN:%.*]]) local_unnamed_addr #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[LEN_ADDR:%.*]] = alloca i32, align 4
-// CHECK-NEXT:    store i32 [[LEN]], ptr [[LEN_ADDR]], align 4, !tbaa [[INT_TBAA2:![0-9]+]]
+// CHECK-NEXT:    store i32 [[LEN]], ptr [[LEN_ADDR]], align 4, !tbaa [[INT_TBAA13:![0-9]+]]
 // CHECK-NEXT:    callbr void @llvm.asm.constraint.br()
 // CHECK-NEXT:            to label %[[ASM_PREF_REG:.*]] [label %[[ASM_PREF_MEM:.*]]]
 // CHECK:       [[ASM_PREF_REG]]:
-// CHECK-NEXT:    [[TMP0:%.*]] = tail call i32 asm sideeffect "", "=&rm,0,~{dirflag},~{fpsr},~{flags}"(i32 [[LEN]]) #[[ATTR4]], !srcloc [[META12:![0-9]+]]
+// CHECK-NEXT:    [[TMP0:%.*]] = tail call i32 asm sideeffect "", "=&rm,0,~{dirflag},~{fpsr},~{flags}"(i32 [[LEN]]) #[[ATTR4]], !srcloc [[META14:![0-9]+]]
 // CHECK-NEXT:    br label %[[ASM_MERGE:.*]]
 // CHECK:       [[ASM_PREF_MEM]]:
-// CHECK-NEXT:    call void asm sideeffect "", "=*&rm,0,~{dirflag},~{fpsr},~{flags}"(ptr nonnull elementtype(i32) [[LEN_ADDR]], i32 [[LEN]]) #[[ATTR4]], !srcloc [[META12]]
+// CHECK-NEXT:    call void asm sideeffect "", "=*&rm,0,~{dirflag},~{fpsr},~{flags}"(ptr nonnull elementtype(i32) [[LEN_ADDR]], i32 [[LEN]]) #[[ATTR4]], !srcloc [[META14]]
 // CHECK-NEXT:    br label %[[ASM_MERGE]]
 // CHECK:       [[ASM_MERGE]]:
 // CHECK-NEXT:    ret void
@@ -95,14 +95,14 @@ void test_reg_mem_earlyclobber(int len) {
 // CHECK-SAME: i32 noundef [[LEN:%.*]]) local_unnamed_addr #[[ATTR0]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[LEN_ADDR:%.*]] = alloca i32, align 4
-// CHECK-NEXT:    store i32 [[LEN]], ptr [[LEN_ADDR]], align 4, !tbaa [[INT_TBAA2]]
+// CHECK-NEXT:    store i32 [[LEN]], ptr [[LEN_ADDR]], align 4, !tbaa [[INT_TBAA13]]
 // CHECK-NEXT:    callbr void @llvm.asm.constraint.br()
 // CHECK-NEXT:            to label %[[ASM_PREF_REG:.*]] [label %[[ASM_PREF_MEM:.*]]]
 // CHECK:       [[ASM_PREF_REG]]:
-// CHECK-NEXT:    [[TMP0:%.*]] = tail call { i32, i32 } asm sideeffect "", "=[[RM:%.*]],=rm,0,1,~{dirflag},~{fpsr},~{flags}"(i32 [[LEN]], i32 [[LEN]]) #[[ATTR4]], !srcloc [[META13:![0-9]+]]
+// CHECK-NEXT:    [[TMP0:%.*]] = tail call { i32, i32 } asm sideeffect "", "=[[RM:%.*]],=rm,0,1,~{dirflag},~{fpsr},~{flags}"(i32 [[LEN]], i32 [[LEN]]) #[[ATTR4]], !srcloc [[META15:![0-9]+]]
 // CHECK-NEXT:    br label %[[ASM_MERGE:.*]]
 // CHECK:       [[ASM_PREF_MEM]]:
-// CHECK-NEXT:    call void asm sideeffect "", "=*[[RM]],=*rm,0,1,~{dirflag},~{fpsr},~{flags}"(ptr nonnull elementtype(i32) [[LEN_ADDR]], ptr nonnull elementtype(i32) [[LEN_ADDR]], i32 [[LEN]], i32 [[LEN]]) #[[ATTR4]], !srcloc [[META13]]
+// CHECK-NEXT:    call void asm sideeffect "", "=*[[RM]],=*rm,0,1,~{dirflag},~{fpsr},~{flags}"(ptr nonnull elementtype(i32) [[LEN_ADDR]], ptr nonnull elementtype(i32) [[LEN_ADDR]], i32 [[LEN]], i32 [[LEN]]) #[[ATTR4]], !srcloc [[META15]]
 // CHECK-NEXT:    br label %[[ASM_MERGE]]
 // CHECK:       [[ASM_MERGE]]:
 // CHECK-NEXT:    ret void
@@ -120,12 +120,12 @@ void test_reg_mem_commutative(int len) {
 // CHECK-NEXT:            to label %[[ASM_PREF_REG:.*]] [label %[[ASM_PREF_MEM:.*]]]
 // CHECK:       [[ASM_PREF_REG]]:
 // CHECK-NEXT:    [[TMP0:%.*]] = callbr i32 asm "", "=rm,!i,~{dirflag},~{fpsr},~{flags}"() #[[ATTR5]]
-// CHECK-NEXT:            to label %[[CLEANUP:.*]] [label %[[INDIRECT_SPLIT:.*]]], !srcloc [[META14:![0-9]+]]
+// CHECK-NEXT:            to label %[[CLEANUP:.*]] [label %[[INDIRECT_SPLIT:.*]]], !srcloc [[META16:![0-9]+]]
 // CHECK:       [[ASM_PREF_MEM]]:
 // CHECK-NEXT:    callbr void asm "", "=*rm,!i,~{dirflag},~{fpsr},~{flags}"(ptr nonnull elementtype(i32) [[OUT]]) #[[ATTR4]]
-// CHECK-NEXT:            to label %[[ASM_PREF_MEM_ASM_MERGE_CRIT_EDGE:.*]] [label %[[CLEANUP]]], !srcloc [[META14]]
+// CHECK-NEXT:            to label %[[ASM_PREF_MEM_ASM_MERGE_CRIT_EDGE:.*]] [label %[[CLEANUP]]], !srcloc [[META16]]
 // CHECK:       [[ASM_PREF_MEM_ASM_MERGE_CRIT_EDGE]]:
-// CHECK-NEXT:    [[DOTPRE:%.*]] = load i32, ptr [[OUT]], align 4, !tbaa [[LONG_TBAA8]]
+// CHECK-NEXT:    [[DOTPRE:%.*]] = load i32, ptr [[OUT]], align 4, !tbaa [[LONG_TBAA9]]
 // CHECK-NEXT:    br label %[[CLEANUP]]
 // CHECK:       [[INDIRECT_SPLIT]]:
 // CHECK-NEXT:    br label %[[CLEANUP]]
@@ -147,7 +147,7 @@ indirect:
 // CHECK-LABEL: define dso_local void @test_pr3908(
 // CHECK-SAME: i32 noundef [[R:%.*]]) local_unnamed_addr #[[ATTR3:[0-9]+]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
-// CHECK-NEXT:    [[TMP0:%.*]] = tail call i32 asm "# PR3908 $1 $3 $2 $0", "=r,mx,mr,x,0,~{dirflag},~{fpsr},~{flags}"(i32 0, i32 0, double 0.000000e+00, i32 [[R]]) #[[ATTR6:[0-9]+]], !srcloc [[META15:![0-9]+]]
+// CHECK-NEXT:    [[TMP0:%.*]] = tail call i32 asm "# PR3908 $1 $3 $2 $0", "=r,mx,mr,x,0,~{dirflag},~{fpsr},~{flags}"(i32 0, i32 0, double 0.000000e+00, i32 [[R]]) #[[ATTR6:[0-9]+]], !srcloc [[META17:![0-9]+]]
 // CHECK-NEXT:    ret void
 //
 void test_pr3908(int r) {
@@ -156,18 +156,18 @@ void test_pr3908(int r) {
            : [lf] "mx" (0), [li] "mr" (0), [xx] "x" ((double)(0)));
 }
 //.
-// CHECK: [[INT_TBAA2]] = !{[[META3:![0-9]+]], [[META3]], i64 0}
-// CHECK: [[META3]] = !{!"int", [[META4:![0-9]+]], i64 0}
-// CHECK: [[META4]] = !{!"omnipotent char", [[META5:![0-9]+]], i64 0}
-// CHECK: [[META5]] = !{!"Simple C/C++ TBAA"}
-// CHECK: [[META6]] = !{i64 590}
-// CHECK: [[META7]] = !{i64 1887}
-// CHECK: [[LONG_TBAA8]] = !{[[META9:![0-9]+]], [[META9]], i64 0}
-// CHECK: [[META9]] = !{!"long", [[META4]], i64 0}
-// CHECK: [[META10]] = !{i64 2300}
-// CHECK: [[META11]] = !{i64 3573}
-// CHECK: [[META12]] = !{i64 4671}
-// CHECK: [[META13]] = !{i64 5849}
-// CHECK: [[META14]] = !{i64 7485}
-// CHECK: [[META15]] = !{i64 8004}
+// CHECK: [[META4:![0-9]+]] = !{!"int", [[META5:![0-9]+]], i64 0}
+// CHECK: [[META5]] = !{!"omnipotent char", [[META6:![0-9]+]], i64 0}
+// CHECK: [[META6]] = !{!"Simple C/C++ TBAA"}
+// CHECK: [[META7]] = !{i64 590}
+// CHECK: [[META8]] = !{i64 1887}
+// CHECK: [[LONG_TBAA9]] = !{[[META10:![0-9]+]], [[META10]], i64 0}
+// CHECK: [[META10]] = !{!"long", [[META5]], i64 0}
+// CHECK: [[META11]] = !{i64 2300}
+// CHECK: [[META12]] = !{i64 3573}
+// CHECK: [[INT_TBAA13]] = !{[[META4]], [[META4]], i64 0}
+// CHECK: [[META14]] = !{i64 4672}
+// CHECK: [[META15]] = !{i64 5851}
+// CHECK: [[META16]] = !{i64 7487}
+// CHECK: [[META17]] = !{i64 8006}
 //.

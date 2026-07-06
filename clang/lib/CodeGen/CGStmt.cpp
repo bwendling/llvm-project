@@ -2733,6 +2733,30 @@ class AsmConstraintsInfo {
     return false;
   }
 
+  /// Reset for reuse. No need to recalculate the constraint infos.
+  void reset() {
+    Constraints.clear();
+    InOutConstraints.clear();
+    OutputConstraints.clear();
+    Args.clear();
+    ArgTypes.clear();
+    ArgElemTypes.clear();
+    ResultRegDests.clear();
+    ResultRegQualTys.clear();
+    ResultRegTypes.clear();
+    ResultTruncRegTypes.clear();
+    ResultTypeRequiresCast.clear();
+    InOutArgs.clear();
+    InOutArgTypes.clear();
+    InOutArgElemTypes.clear();
+    IndirectDests.clear();
+    ResultBounds.clear();
+
+    DefaultDest = nullptr;
+    ReadOnly = true;
+    ReadNone = true;
+  }
+
   void EmitAsmStmtImpl();
 
 public:
@@ -2777,12 +2801,16 @@ void AsmConstraintsInfo::EmitAsmStmt() {
 
   llvm::BasicBlock *PrefRegBlock = nullptr;
   llvm::BasicBlock *PrefMemBlock = nullptr;
+  llvm::BasicBlock *MergeBlock = nullptr;
 
   if (HasRegMemConstraints) {
     PrefRegBlock = CGF.createBasicBlock("asm.pref.reg");
     PrefMemBlock = CGF.createBasicBlock("asm.pref.mem");
+    MergeBlock = CGF.createBasicBlock("asm.merge");
+
     CGF.CurFn->insert(CGF.CurFn->end(), PrefRegBlock);
     CGF.CurFn->insert(CGF.CurFn->end(), PrefMemBlock);
+    CGF.CurFn->insert(CGF.CurFn->end(), MergeBlock);
 
     Builder.CreateCallBr(CGM.getIntrinsic(llvm::Intrinsic::asm_constraint_br),
                          PrefRegBlock, PrefMemBlock);
@@ -2798,11 +2826,10 @@ void AsmConstraintsInfo::EmitAsmStmt() {
   EmitAsmStmtImpl();
 
   if (HasRegMemConstraints) {
-    llvm::BasicBlock *MergeBlock = CGF.createBasicBlock("asm.merge");
-    CGF.CurFn->insert(CGF.CurFn->end(), MergeBlock);
     Builder.CreateBr(MergeBlock);
     Builder.SetInsertPoint(PrefRegBlock);
 
+    reset();
     PreferRegs = true;
     EmitAsmStmtImpl();
 

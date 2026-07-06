@@ -14,8 +14,8 @@
 // CHECK-NEXT:  [[ENTRY:.*:]]
 // CHECK-NEXT:    [[X:%.*]] = alloca i64, align 8
 // CHECK-NEXT:    call void @llvm.lifetime.start.p0(ptr nonnull [[X]]) #[[ATTR2:[0-9]+]]
-// CHECK-NEXT:    call void asm "# $$0", "=*ro"(ptr nonnull elementtype(i64) [[X]]) #[[ATTR2]], !srcloc [[META5:![0-9]+]]
-// CHECK-NEXT:    [[TMP0:%.*]] = load i64, ptr [[X]], align 8, !tbaa [[LONG_TBAA6:![0-9]+]]
+// CHECK-NEXT:    call void asm "# $$0", "=*ro"(ptr nonnull elementtype(i64) [[X]]) #[[ATTR2]], !srcloc [[META6:![0-9]+]]
+// CHECK-NEXT:    [[TMP0:%.*]] = load i64, ptr [[X]], align 8, !tbaa [[LONG_TBAA7:![0-9]+]]
 // CHECK-NEXT:    call void @llvm.lifetime.end.p0(ptr nonnull [[X]]) #[[ATTR2]]
 // CHECK-NEXT:    ret i64 [[TMP0]]
 //
@@ -25,9 +25,9 @@ unsigned long test_ro_output(void) {
   return x;
 }
 //.
-// CHECK: [[META3:![0-9]+]] = !{!"omnipotent char", [[META4:![0-9]+]], i64 0}
-// CHECK: [[META4]] = !{!"Simple C/C++ TBAA"}
-// CHECK: [[META5]] = !{i64 693}
-// CHECK: [[LONG_TBAA6]] = !{[[META7:![0-9]+]], [[META7]], i64 0}
-// CHECK: [[META7]] = !{!"long", [[META3]], i64 0}
+// CHECK: [[META4:![0-9]+]] = !{!"omnipotent char", [[META5:![0-9]+]], i64 0}
+// CHECK: [[META5]] = !{!"Simple C/C++ TBAA"}
+// CHECK: [[META6]] = !{i64 1282}
+// CHECK: [[LONG_TBAA7]] = !{[[META8:![0-9]+]], [[META8]], i64 0}
+// CHECK: [[META8]] = !{!"long", [[META4]], i64 0}
 //.

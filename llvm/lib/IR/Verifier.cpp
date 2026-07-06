@@ -6961,7 +6961,7 @@ void Verifier::visitIntrinsicCall(Intrinsic::ID ID, CallBase &Call) {
     break;
   }
   case Intrinsic::asm_constraint_br: {
-    Check(!isa<CallBrInst>(Call),
+    Check(isa<CallBrInst>(Call),
           "llvm.asm.constraint.br must be called only by callbr", &Call);
 
     const CallBrInst &CBI = cast<CallBrInst>(Call);
