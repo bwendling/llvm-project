@@ -15746,7 +15746,7 @@ catch:
 
 ##### Syntax:
 
-```llvm
+```
 declare void @llvm.asm.constraint.br()
 ```
 
