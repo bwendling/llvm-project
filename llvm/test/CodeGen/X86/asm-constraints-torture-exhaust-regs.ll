@@ -4,17 +4,19 @@
 ; RUN: llc -mtriple=x86_64-unknown-linux-gnu --global-isel=false --fast-isel=false --regalloc=greedy < %s \
 ; RUN:     | FileCheck --check-prefix=GREEDY_RA %s
 
-; RUN: not llc -mtriple=x86_64-unknown-linux-gnu --global-isel=false --fast-isel=true --regalloc=fast < %s 2> %t1
-; RUN: FileCheck --check-prefix=EXHAUSTED %s < %t1
-; RUN: not llc -mtriple=x86_64-unknown-linux-gnu --global-isel=false --fast-isel=false --regalloc=fast < %s 2> %t2
-; RUN: FileCheck --check-prefix=EXHAUSTED %s < %t2
-
-; EXHAUSTED: inline assembly requires more registers than available
+; RUN: llc -mtriple=x86_64-unknown-linux-gnu --global-isel=false --fast-isel=true --regalloc=fast < %s \
+; RUN:     | FileCheck --check-prefix=FAST_ISEL_FAST_RA %s
+; RUN: llc -mtriple=x86_64-unknown-linux-gnu --global-isel=false --fast-isel=false --regalloc=fast < %s \
+; RUN:     | FileCheck --check-prefix=FAST_RA %s
 
 ; Exhaust all 14 usable x86 GPRs: 6 inputs consume rdi/rsi/rdx/rcx/r8/r9, and
 ; the asm clobbers rax/rbx/rbp/r10-r15. The early-clobber output (=&rm) has
-; no register left, so the greedy RA must fold it to a stack slot at O2. At O0,
-; InlineAsmPrepare routes directly to the memory path.
+; no register left, so the register allocator must fold it to a stack slot.
+; Both the greedy RA (via MayFoldRegister/InlineSpiller) and the fast RA (via
+; RegAllocFast::foldFoldableInlineAsmOperands) can do this on demand, so both
+; take the register-preferring "asm.pref.reg" arm here -- only compiling with
+; -O0 (not exercised by this test) would make InlineAsmPrepare route to the
+; conservative "asm.pref.mem" arm instead.
 define i64 @test_rm_output_pressure(i64 %a, i64 %b, i64 %c, i64 %d, i64 %e, i64 %f) {
 ; FAST_ISEL_GREEDY_RA-LABEL: test_rm_output_pressure:
 ; FAST_ISEL_GREEDY_RA:       # %bb.0: # %entry
@@ -113,6 +115,84 @@ define i64 @test_rm_output_pressure(i64 %a, i64 %b, i64 %c, i64 %d, i64 %e, i64 
 ; GREEDY_RA-NEXT:    popq %rbp
 ; GREEDY_RA-NEXT:    .cfi_def_cfa_offset 8
 ; GREEDY_RA-NEXT:    retq
+;
+; FAST_ISEL_FAST_RA-LABEL: test_rm_output_pressure:
+; FAST_ISEL_FAST_RA:       # %bb.0: # %entry
+; FAST_ISEL_FAST_RA-NEXT:    pushq %rbp
+; FAST_ISEL_FAST_RA-NEXT:    .cfi_def_cfa_offset 16
+; FAST_ISEL_FAST_RA-NEXT:    pushq %r15
+; FAST_ISEL_FAST_RA-NEXT:    .cfi_def_cfa_offset 24
+; FAST_ISEL_FAST_RA-NEXT:    pushq %r14
+; FAST_ISEL_FAST_RA-NEXT:    .cfi_def_cfa_offset 32
+; FAST_ISEL_FAST_RA-NEXT:    pushq %r13
+; FAST_ISEL_FAST_RA-NEXT:    .cfi_def_cfa_offset 40
+; FAST_ISEL_FAST_RA-NEXT:    pushq %r12
+; FAST_ISEL_FAST_RA-NEXT:    .cfi_def_cfa_offset 48
+; FAST_ISEL_FAST_RA-NEXT:    pushq %rbx
+; FAST_ISEL_FAST_RA-NEXT:    .cfi_def_cfa_offset 56
+; FAST_ISEL_FAST_RA-NEXT:    .cfi_offset %rbx, -56
+; FAST_ISEL_FAST_RA-NEXT:    .cfi_offset %r12, -48
+; FAST_ISEL_FAST_RA-NEXT:    .cfi_offset %r13, -40
+; FAST_ISEL_FAST_RA-NEXT:    .cfi_offset %r14, -32
+; FAST_ISEL_FAST_RA-NEXT:    .cfi_offset %r15, -24
+; FAST_ISEL_FAST_RA-NEXT:    .cfi_offset %rbp, -16
+; FAST_ISEL_FAST_RA-NEXT:    #APP # 8-byte Folded Spill
+; FAST_ISEL_FAST_RA-NEXT:    # -{{[0-9]+}}(%rsp) %rdi %rsi %rdx %rcx %r8 %r9
+; FAST_ISEL_FAST_RA-NEXT:    #NO_APP
+; FAST_ISEL_FAST_RA-NEXT:    movq {{[-0-9]+}}(%r{{[sb]}}p), %rax # 8-byte Reload
+; FAST_ISEL_FAST_RA-NEXT:    movq %rax, -{{[0-9]+}}(%rsp)
+; FAST_ISEL_FAST_RA-NEXT:    movq -{{[0-9]+}}(%rsp), %rax
+; FAST_ISEL_FAST_RA-NEXT:    popq %rbx
+; FAST_ISEL_FAST_RA-NEXT:    .cfi_def_cfa_offset 48
+; FAST_ISEL_FAST_RA-NEXT:    popq %r12
+; FAST_ISEL_FAST_RA-NEXT:    .cfi_def_cfa_offset 40
+; FAST_ISEL_FAST_RA-NEXT:    popq %r13
+; FAST_ISEL_FAST_RA-NEXT:    .cfi_def_cfa_offset 32
+; FAST_ISEL_FAST_RA-NEXT:    popq %r14
+; FAST_ISEL_FAST_RA-NEXT:    .cfi_def_cfa_offset 24
+; FAST_ISEL_FAST_RA-NEXT:    popq %r15
+; FAST_ISEL_FAST_RA-NEXT:    .cfi_def_cfa_offset 16
+; FAST_ISEL_FAST_RA-NEXT:    popq %rbp
+; FAST_ISEL_FAST_RA-NEXT:    .cfi_def_cfa_offset 8
+; FAST_ISEL_FAST_RA-NEXT:    retq
+;
+; FAST_RA-LABEL: test_rm_output_pressure:
+; FAST_RA:       # %bb.0: # %entry
+; FAST_RA-NEXT:    pushq %rbp
+; FAST_RA-NEXT:    .cfi_def_cfa_offset 16
+; FAST_RA-NEXT:    pushq %r15
+; FAST_RA-NEXT:    .cfi_def_cfa_offset 24
+; FAST_RA-NEXT:    pushq %r14
+; FAST_RA-NEXT:    .cfi_def_cfa_offset 32
+; FAST_RA-NEXT:    pushq %r13
+; FAST_RA-NEXT:    .cfi_def_cfa_offset 40
+; FAST_RA-NEXT:    pushq %r12
+; FAST_RA-NEXT:    .cfi_def_cfa_offset 48
+; FAST_RA-NEXT:    pushq %rbx
+; FAST_RA-NEXT:    .cfi_def_cfa_offset 56
+; FAST_RA-NEXT:    .cfi_offset %rbx, -56
+; FAST_RA-NEXT:    .cfi_offset %r12, -48
+; FAST_RA-NEXT:    .cfi_offset %r13, -40
+; FAST_RA-NEXT:    .cfi_offset %r14, -32
+; FAST_RA-NEXT:    .cfi_offset %r15, -24
+; FAST_RA-NEXT:    .cfi_offset %rbp, -16
+; FAST_RA-NEXT:    #APP # 8-byte Folded Spill
+; FAST_RA-NEXT:    # -{{[0-9]+}}(%rsp) %rdi %rsi %rdx %rcx %r8 %r9
+; FAST_RA-NEXT:    #NO_APP
+; FAST_RA-NEXT:    movq {{[-0-9]+}}(%r{{[sb]}}p), %rax # 8-byte Reload
+; FAST_RA-NEXT:    popq %rbx
+; FAST_RA-NEXT:    .cfi_def_cfa_offset 48
+; FAST_RA-NEXT:    popq %r12
+; FAST_RA-NEXT:    .cfi_def_cfa_offset 40
+; FAST_RA-NEXT:    popq %r13
+; FAST_RA-NEXT:    .cfi_def_cfa_offset 32
+; FAST_RA-NEXT:    popq %r14
+; FAST_RA-NEXT:    .cfi_def_cfa_offset 24
+; FAST_RA-NEXT:    popq %r15
+; FAST_RA-NEXT:    .cfi_def_cfa_offset 16
+; FAST_RA-NEXT:    popq %rbp
+; FAST_RA-NEXT:    .cfi_def_cfa_offset 8
+; FAST_RA-NEXT:    retq
 entry:
   %out = alloca i64, align 8
   callbr void @llvm.asm.constraint.br()
